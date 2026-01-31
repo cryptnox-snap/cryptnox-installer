@@ -72,11 +72,18 @@ if [ "${VERSION}" != "1.0.3" ]; then
     sed -i "s/1.0.3-1/${VERSION}-1/g" debian/changelog
 fi
 
+# Use sudo if available and not root
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+else
+    SUDO="sudo"
+fi
+
 # Install build dependencies (skip with SKIP_DEPS=true)
 if [ "${SKIP_DEPS}" != "true" ]; then
     echo "Installing build dependencies..."
-    sudo apt-get update
-    sudo apt-get install -y \
+    $SUDO apt-get update
+    $SUDO apt-get install -y \
         build-essential \
         debhelper \
         dh-python \
