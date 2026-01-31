@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://www.cryptnox.com/wp-content/uploads/2021/09/cryptnox-logo.svg" alt="Cryptnox" width="300">
+  <img src="https://cryptnox.com/bv-wp-content/uploads/2023/05/cryptnox-logo.png" alt="Cryptnox" width="300">
 </p>
 
 <h1 align="center">Cryptnox Installer</h1>
@@ -36,14 +36,14 @@ chmod +x install.sh
 
 ## Supported Distributions
 
-| Distribution | Method | Status |
-|--------------|--------|--------|
-| Ubuntu 22.04+ | Snap / Deb | ✅ |
-| Debian 12+ | Snap / Deb | ✅ |
-| Linux Mint 21+ | Snap / Deb | ✅ |
-| Fedora 38+ | Snap / Pip | ✅ |
-| Arch Linux | Snap / Pip | ✅ |
-| openSUSE | Snap / Pip | ✅ |
+| Distribution | Architecture | Method | Status |
+|--------------|--------------|--------|--------|
+| Ubuntu 22.04+ | amd64 / arm64 | Snap / Deb | ✅ |
+| Debian 12+ | amd64 / arm64 | Snap / Deb | ✅ |
+| Linux Mint 21+ | amd64 / arm64 | Snap / Deb | ✅ |
+| Fedora 38+ | amd64 / arm64 | Snap / Pip | ✅ |
+| Arch Linux | amd64 / arm64 | Snap / Pip | ✅ |
+| openSUSE | amd64 / arm64 | Snap / Pip | ✅ |
 
 ---
 
@@ -108,8 +108,11 @@ sudo snap connect cryptnox:hardware-observe
 ### From Deb Package
 
 ```bash
-# Download from releases
-wget https://github.com/kokoye2007/cryptnox-installer/releases/latest/download/cryptnox-cli_1.0.3-1_amd64.deb
+# For amd64 (x86_64)
+wget https://github.com/kokoye2007/cryptnox-installer/releases/latest/download/cryptnox-cli_1.0.3-1_amd64_ubuntu-24.04.deb
+
+# For arm64 (aarch64/Raspberry Pi)
+wget https://github.com/kokoye2007/cryptnox-installer/releases/latest/download/cryptnox-cli_1.0.3-1_arm64_ubuntu-24.04.deb
 
 # Install
 sudo dpkg -i cryptnox-cli_*.deb
@@ -162,7 +165,7 @@ cryptnox eth send        # Send Ethereum
 ## Requirements
 
 - **Hardware**: Cryptnox Smart Card + USB Card Reader
-- **OS**: Linux (64-bit)
+- **OS**: Linux (amd64 or arm64)
 - **Python**: 3.11+ (for pip install)
 
 ---

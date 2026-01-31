@@ -2,7 +2,7 @@
 # Cryptnox CLI Universal Installer
 # Supports: Snap, Deb (Debian/Ubuntu/Mint), RPM (Fedora/RHEL), pip (fallback)
 #
-# Usage: curl -fsSL https://raw.githubusercontent.com/kokoye2007/cryptnox-snap/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/kokoye2007/cryptnox-installer/main/install.sh | bash
 #    or: ./install.sh [--snap|--deb|--rpm|--pip]
 
 set -e
@@ -149,6 +149,51 @@ install_snap() {
     log_info "Use: cryptnox.card"
 }
 
+# Detect architecture
+detect_arch() {
+    ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    case "$ARCH" in
+        amd64|x86_64) ARCH="amd64" ;;
+        arm64|aarch64) ARCH="arm64" ;;
+        *) ARCH="$ARCH" ;;
+    esac
+    echo "$ARCH"
+}
+
+# Detect Ubuntu/Debian version for deb package
+detect_ubuntu_version() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        case "$ID" in
+            ubuntu)
+                case "$VERSION_ID" in
+                    24.*) echo "ubuntu-24.04" ;;
+                    22.*) echo "ubuntu-22.04" ;;
+                    *) echo "ubuntu-22.04" ;;  # fallback
+                esac
+                ;;
+            debian)
+                case "$VERSION_ID" in
+                    12*) echo "ubuntu-22.04" ;;  # Debian 12 ~ Ubuntu 22.04
+                    *) echo "ubuntu-22.04" ;;
+                esac
+                ;;
+            linuxmint)
+                case "$VERSION_ID" in
+                    22*) echo "ubuntu-24.04" ;;  # Mint 22 ~ Ubuntu 24.04
+                    21*) echo "ubuntu-22.04" ;;  # Mint 21 ~ Ubuntu 22.04
+                    *) echo "ubuntu-22.04" ;;
+                esac
+                ;;
+            *)
+                echo "ubuntu-22.04"  # default fallback
+                ;;
+        esac
+    else
+        echo "ubuntu-22.04"
+    fi
+}
+
 # Install via Deb package
 install_deb() {
     log_info "Installing via Deb package..."
@@ -160,18 +205,25 @@ install_deb() {
 
     install_dependencies
 
-    # Check for pre-built deb in releases
-    RELEASE_URL="https://github.com/kokoye2007/cryptnox-snap/releases/latest/download"
-    ARCH=$(dpkg --print-architecture)
-    DEB_FILE="cryptnox-cli_${VERSION}-1_${ARCH}.deb"
+    # Detect architecture and OS version
+    ARCH=$(detect_arch)
+    OS_VER=$(detect_ubuntu_version)
 
-    log_info "Checking for pre-built package..."
+    log_info "Architecture: $ARCH"
+    log_info "OS compatibility: $OS_VER"
+
+    # Check for pre-built deb in releases
+    RELEASE_URL="https://github.com/kokoye2007/cryptnox-installer/releases/download/v${VERSION}"
+    DEB_FILE="cryptnox-cli_${VERSION}-1_${ARCH}_${OS_VER}.deb"
+
+    log_info "Downloading: ${DEB_FILE}"
     if curl -fsSL -o "/tmp/${DEB_FILE}" "${RELEASE_URL}/${DEB_FILE}" 2>/dev/null; then
         log_info "Installing pre-built package..."
         sudo dpkg -i "/tmp/${DEB_FILE}" || sudo apt-get install -f -y
         rm -f "/tmp/${DEB_FILE}"
     else
-        log_warn "Pre-built package not found, falling back to pip..."
+        log_warn "Pre-built package not found for ${ARCH}/${OS_VER}"
+        log_warn "Falling back to pip installation..."
         install_pip
         return
     fi
@@ -361,6 +413,10 @@ status() {
     echo ""
     log_info "System Status"
     echo ""
+
+    # Show architecture
+    ARCH=$(detect_arch)
+    echo "Architecture:  $ARCH"
 
     # Check pcscd service
     echo -n "pcscd service: "
