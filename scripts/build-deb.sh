@@ -19,8 +19,8 @@ echo "=== Building ${PKG_NAME} ${VERSION} deb package ==="
 echo "Build directory: ${BUILD_DIR}"
 echo "Repo root: ${REPO_ROOT}"
 
-# Cleanup previous build if using default location
-if [[ "${BUILD_DIR}" == /tmp/cryptnox-deb-build.* ]]; then
+# Cleanup previous build if using default location (skip in CI for artifact upload)
+if [[ "${BUILD_DIR}" == /tmp/cryptnox-deb-build.* ]] && [[ "${CI}" != "true" ]]; then
     trap "rm -rf ${BUILD_DIR}" EXIT
 fi
 mkdir -p "${BUILD_DIR}"
@@ -101,6 +101,14 @@ dpkg-buildpackage -us -uc -b
 echo "=== Build complete ==="
 echo "Packages are in: ${BUILD_DIR}"
 ls -la "${BUILD_DIR}"/*.deb 2>/dev/null || echo "No .deb files found"
+
+# Copy artifacts to workspace for CI
+if [[ -n "${GITHUB_WORKSPACE}" ]]; then
+    mkdir -p "${GITHUB_WORKSPACE}/dist"
+    cp "${BUILD_DIR}"/*.deb "${GITHUB_WORKSPACE}/dist/" 2>/dev/null || true
+    echo "Artifacts copied to: ${GITHUB_WORKSPACE}/dist/"
+    ls -la "${GITHUB_WORKSPACE}/dist/"
+fi
 
 echo ""
 echo "To install: sudo dpkg -i ${BUILD_DIR}/${PKG_NAME}_${VERSION}-1_*.deb"
