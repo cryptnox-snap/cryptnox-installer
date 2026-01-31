@@ -1,123 +1,168 @@
 #!/bin/bash
 # Cryptnox CLI Universal Installer
-# Supports: Snap, Deb (Debian/Ubuntu/Mint), RPM (Fedora/RHEL), pip (fallback)
+# Supports: Native (pip + apt), Snap, Deb
 #
-# Usage: curl -fsSL https://raw.githubusercontent.com/kokoye2007/cryptnox-installer/main/install.sh | bash
-#    or: ./install.sh [--snap|--deb|--rpm|--pip]
+# Usage: curl -fsSL https://raw.githubusercontent.com/cryptnox-snap/cryptnox-installer/main/install.sh | bash
+#    or: ./install.sh [--native|--snap|--deb]
 
 set -e
 
-# Cleanup on failure
-cleanup() {
-    rm -f /tmp/cryptnox-cli_*.deb 2>/dev/null || true
-}
-trap cleanup EXIT
-
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Version - fetch from PyPI if not specified
-get_latest_version() {
-    curl -fsSL https://pypi.org/pypi/cryptnox-cli/json 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4
-}
-
-VERSION="${CRYPTNOX_VERSION:-$(get_latest_version)}"
-VERSION="${VERSION:-1.0.3}" # Fallback if fetch fails
+NC='\033[0m'
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Check if sudo is available
-check_sudo() {
-    if ! command -v sudo &> /dev/null; then
-        log_error "sudo is required but not found. Please install sudo or run as root."
-        exit 1
-    fi
+# Version from PyPI
+get_latest_version() {
+    curl -fsSL https://pypi.org/pypi/cryptnox-cli/json 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4
 }
 
-# Detect OS and package manager
+VERSION="${CRYPTNOX_VERSION:-$(get_latest_version)}"
+VERSION="${VERSION:-1.0.3}"
+
+# Detect architecture
+detect_arch() {
+    case "$(uname -m)" in
+        x86_64|amd64) echo "amd64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        *) echo "$(uname -m)" ;;
+    esac
+}
+
+# Detect OS
 detect_os() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         OS=$ID
         OS_VERSION=$VERSION_ID
         OS_NAME=$PRETTY_NAME
-    elif [ -f /etc/lsb-release ]; then
-        . /etc/lsb-release
-        OS=$DISTRIB_ID
-        OS_VERSION=$DISTRIB_RELEASE
-        OS_NAME=$DISTRIB_DESCRIPTION
     else
         OS=$(uname -s)
         OS_VERSION=$(uname -r)
         OS_NAME=$OS
     fi
 
-    # Detect package manager
-    if command -v snap &> /dev/null; then
-        HAS_SNAP=true
-    else
-        HAS_SNAP=false
-    fi
-
-    if command -v apt-get &> /dev/null; then
+    # Package manager
+    if command -v apt-get &>/dev/null; then
         PKG_MANAGER="apt"
-    elif command -v dnf &> /dev/null; then
+    elif command -v dnf &>/dev/null; then
         PKG_MANAGER="dnf"
-    elif command -v yum &> /dev/null; then
+    elif command -v yum &>/dev/null; then
         PKG_MANAGER="yum"
-    elif command -v pacman &> /dev/null; then
+    elif command -v pacman &>/dev/null; then
         PKG_MANAGER="pacman"
-    elif command -v zypper &> /dev/null; then
+    elif command -v zypper &>/dev/null; then
         PKG_MANAGER="zypper"
     else
         PKG_MANAGER="unknown"
     fi
 
-    log_info "Detected: $OS_NAME"
+    HAS_SNAP=$(command -v snap &>/dev/null && echo true || echo false)
+
+    log_info "OS: $OS_NAME"
+    log_info "Architecture: $(detect_arch)"
     log_info "Package manager: $PKG_MANAGER"
-    log_info "Snap available: $HAS_SNAP"
 }
 
-# Install system dependencies
-install_dependencies() {
-    check_sudo
+# Install system dependencies via apt/dnf/etc
+install_system_deps() {
     log_info "Installing system dependencies..."
 
     case $PKG_MANAGER in
         apt)
             sudo apt-get update
-            sudo apt-get install -y pcscd libpcsclite1 pcsc-tools python3-pip python3-pyscard
+            sudo apt-get install -y \
+                pcscd \
+                libpcsclite1 \
+                pcsc-tools \
+                python3-pip \
+                python3-venv \
+                python3-pyscard \
+                swig \
+                libpcsclite-dev
             ;;
         dnf|yum)
-            sudo $PKG_MANAGER install -y pcsc-lite pcsc-lite-libs pcsc-tools python3-pip python3-pyscard
-            sudo systemctl enable --now pcscd
+            sudo $PKG_MANAGER install -y \
+                pcsc-lite \
+                pcsc-lite-libs \
+                pcsc-tools \
+                python3-pip \
+                python3-pyscard \
+                swig \
+                pcsc-lite-devel
             ;;
         pacman)
-            sudo pacman -Syu --noconfirm pcsclite ccid python-pip python-pyscard
-            sudo systemctl enable --now pcscd
+            sudo pacman -Syu --noconfirm \
+                pcsclite \
+                ccid \
+                python-pip \
+                python-pyscard \
+                swig
             ;;
         zypper)
-            sudo zypper install -y pcsc-lite pcsc-ccid python3-pip python3-pyscard
-            sudo systemctl enable --now pcscd
+            sudo zypper install -y \
+                pcsc-lite \
+                pcsc-ccid \
+                python3-pip \
+                python3-pyscard \
+                swig \
+                pcsc-lite-devel
             ;;
         *)
-            log_warn "Unknown package manager. Please install pcscd manually."
+            log_warn "Unknown package manager. Install pcscd manually."
             ;;
     esac
+
+    # Enable pcscd
+    if command -v systemctl &>/dev/null; then
+        sudo systemctl enable pcscd 2>/dev/null || true
+        sudo systemctl start pcscd 2>/dev/null || true
+    fi
+
+    log_success "System dependencies installed"
+}
+
+# Install via pip (Native method - RECOMMENDED)
+install_native() {
+    log_info "Installing via pip (native method)..."
+
+    install_system_deps
+
+    # Install cryptnox-cli via pip
+    log_info "Installing cryptnox-cli via pip..."
+
+    # Try with --break-system-packages (Python 3.11+)
+    if pip3 install --user --break-system-packages cryptnox-cli 2>/dev/null; then
+        log_success "Installed via pip"
+    elif pip3 install --user cryptnox-cli 2>/dev/null; then
+        log_success "Installed via pip"
+    else
+        log_error "pip install failed"
+        return 1
+    fi
+
+    # Check PATH
+    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        log_warn "Add ~/.local/bin to your PATH:"
+        log_warn "  echo 'export PATH=\$HOME/.local/bin:\$PATH' >> ~/.bashrc"
+        log_warn "  source ~/.bashrc"
+    fi
+
+    log_info "Use: ~/.local/bin/cryptnox or cryptnox (if PATH configured)"
 }
 
 # Install via Snap
 install_snap() {
     log_info "Installing via Snap..."
 
-    if ! command -v snap &> /dev/null; then
+    if ! command -v snap &>/dev/null; then
         log_info "Installing snapd..."
         case $PKG_MANAGER in
             apt)
@@ -128,10 +173,6 @@ install_snap() {
                 sudo systemctl enable --now snapd.socket
                 sudo ln -sf /var/lib/snapd/snap /snap 2>/dev/null || true
                 ;;
-            pacman)
-                log_warn "Install snapd from AUR: yay -S snapd"
-                return 1
-                ;;
             *)
                 log_error "Cannot install snapd automatically"
                 return 1
@@ -141,7 +182,7 @@ install_snap() {
 
     sudo snap install cryptnox
 
-    log_info "Connecting required interfaces for USB card readers..."
+    log_info "Connecting interfaces..."
     sudo snap connect cryptnox:raw-usb || true
     sudo snap connect cryptnox:hardware-observe || true
 
@@ -149,135 +190,153 @@ install_snap() {
     log_info "Use: cryptnox.card"
 }
 
-# Detect architecture
-detect_arch() {
-    ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
-    case "$ARCH" in
-        amd64|x86_64) ARCH="amd64" ;;
-        arm64|aarch64) ARCH="arm64" ;;
-        *) ARCH="$ARCH" ;;
-    esac
-    echo "$ARCH"
-}
-
-# Detect Ubuntu/Debian version for deb package
-detect_ubuntu_version() {
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        case "$ID" in
-            ubuntu)
-                case "$VERSION_ID" in
-                    24.*) echo "ubuntu-24.04" ;;
-                    22.*) echo "ubuntu-22.04" ;;
-                    *) echo "ubuntu-22.04" ;;  # fallback
-                esac
-                ;;
-            debian)
-                case "$VERSION_ID" in
-                    12*) echo "ubuntu-22.04" ;;  # Debian 12 ~ Ubuntu 22.04
-                    *) echo "ubuntu-22.04" ;;
-                esac
-                ;;
-            linuxmint)
-                case "$VERSION_ID" in
-                    22*) echo "ubuntu-24.04" ;;  # Mint 22 ~ Ubuntu 24.04
-                    21*) echo "ubuntu-22.04" ;;  # Mint 21 ~ Ubuntu 22.04
-                    *) echo "ubuntu-22.04" ;;
-                esac
-                ;;
-            *)
-                echo "ubuntu-22.04"  # default fallback
-                ;;
-        esac
-    else
-        echo "ubuntu-22.04"
-    fi
-}
-
-# Install via Deb package
+# Install via Deb package (experimental - may have dependency issues)
 install_deb() {
     log_info "Installing via Deb package..."
+    log_warn "Note: Deb package may have Python dependency issues"
+    log_warn "Consider using --native instead for best compatibility"
 
     if [ "$PKG_MANAGER" != "apt" ]; then
-        log_error "Deb installation requires apt (Debian/Ubuntu/Mint)"
+        log_error "Deb installation requires apt"
         return 1
     fi
 
-    install_dependencies
+    install_system_deps
 
-    # Detect architecture and OS version
+    # Detect architecture and OS
     ARCH=$(detect_arch)
-    OS_VER=$(detect_ubuntu_version)
+    case "$OS" in
+        ubuntu)
+            case "$OS_VERSION" in
+                24.*) OS_VER="ubuntu-24.04" ;;
+                *) OS_VER="ubuntu-22.04" ;;
+            esac
+            ;;
+        *) OS_VER="ubuntu-22.04" ;;
+    esac
 
-    log_info "Architecture: $ARCH"
-    log_info "OS compatibility: $OS_VER"
-
-    # Check for pre-built deb in releases
-    RELEASE_URL="https://github.com/kokoye2007/cryptnox-installer/releases/download/v${VERSION}"
+    RELEASE_URL="https://github.com/cryptnox-snap/cryptnox-installer/releases/latest/download"
     DEB_FILE="cryptnox-cli_${VERSION}-1_${ARCH}_${OS_VER}.deb"
 
     log_info "Downloading: ${DEB_FILE}"
-    if curl -fsSL -o "/tmp/${DEB_FILE}" "${RELEASE_URL}/${DEB_FILE}" 2>/dev/null; then
-        log_info "Installing pre-built package..."
+    if curl -fsSL -o "/tmp/${DEB_FILE}" "${RELEASE_URL}/${DEB_FILE}"; then
         sudo dpkg -i "/tmp/${DEB_FILE}" || sudo apt-get install -f -y
         rm -f "/tmp/${DEB_FILE}"
+
+        # Install pip dependencies (deb package doesn't include all Python deps)
+        log_info "Installing Python dependencies via pip..."
+        pip3 install --user --break-system-packages cryptnox-sdk-py lazy-import tabulate 2>/dev/null || \
+        pip3 install --user cryptnox-sdk-py lazy-import tabulate 2>/dev/null || true
+
+        log_success "Installed via Deb"
+        log_info "Use: cryptnox"
     else
-        log_warn "Pre-built package not found for ${ARCH}/${OS_VER}"
-        log_warn "Falling back to pip installation..."
-        install_pip
+        log_error "Failed to download deb package"
+        log_info "Falling back to native installation..."
+        install_native
+    fi
+}
+
+# Uninstall
+uninstall() {
+    log_info "Uninstalling cryptnox..."
+
+    # Snap
+    if command -v snap &>/dev/null && snap list cryptnox &>/dev/null 2>&1; then
+        log_info "Removing snap..."
+        sudo snap remove cryptnox
+    fi
+
+    # Deb
+    if dpkg -l cryptnox-cli 2>/dev/null | grep -q "^ii"; then
+        log_info "Removing deb..."
+        sudo apt-get remove -y cryptnox-cli
+        sudo apt-get autoremove -y
+    fi
+
+    # Pip
+    if pip3 show cryptnox-cli &>/dev/null 2>&1; then
+        log_info "Removing pip package..."
+        pip3 uninstall -y cryptnox-cli 2>/dev/null || \
+        pip3 uninstall --break-system-packages -y cryptnox-cli 2>/dev/null || true
+    fi
+
+    log_success "Uninstall complete"
+}
+
+# Update
+update() {
+    detect_os
+
+    # Snap
+    if command -v snap &>/dev/null && snap list cryptnox &>/dev/null 2>&1; then
+        log_info "Updating snap..."
+        sudo snap refresh cryptnox
         return
     fi
 
-    log_success "Installed via Deb"
-    log_info "Use: cryptnox"
-}
-
-# Install via RPM package
-install_rpm() {
-    log_info "Installing via RPM/pip for Fedora/RHEL..."
-
-    if [ "$PKG_MANAGER" != "dnf" ] && [ "$PKG_MANAGER" != "yum" ]; then
-        log_error "RPM installation requires dnf/yum (Fedora/RHEL/CentOS)"
-        return 1
+    # Pip
+    if pip3 show cryptnox-cli &>/dev/null 2>&1; then
+        log_info "Updating pip package..."
+        pip3 install --user --upgrade cryptnox-cli 2>/dev/null || \
+        pip3 install --user --upgrade --break-system-packages cryptnox-cli 2>/dev/null
+        return
     fi
 
-    install_dependencies
-
-    # RPM not yet available, use pip
-    log_info "Installing cryptnox-cli via pip..."
-    pip3 install --user cryptnox-cli
-
-    log_success "Installed via pip"
-    log_info "Use: ~/.local/bin/cryptnox or add ~/.local/bin to PATH"
+    log_warn "cryptnox not installed"
 }
 
-# Install via pip (fallback)
-install_pip() {
-    log_info "Installing via pip..."
+# Show version
+show_version() {
+    echo ""
+    log_info "Installed versions:"
 
-    install_dependencies
-
-    # Ensure pip is available
-    if ! command -v pip3 &> /dev/null; then
-        log_error "pip3 not found. Please install python3-pip."
-        return 1
+    # Snap
+    if command -v snap &>/dev/null && snap list cryptnox &>/dev/null 2>&1; then
+        echo "  Snap: $(snap list cryptnox 2>/dev/null | tail -1 | awk '{print $2}')"
     fi
 
-    pip3 install --user cryptnox-cli
-
-    # Add to PATH if needed
-    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-        log_warn "Add ~/.local/bin to your PATH:"
-        log_warn "  echo 'export PATH=\$HOME/.local/bin:\$PATH' >> ~/.bashrc"
+    # Deb
+    if dpkg -l cryptnox-cli 2>/dev/null | grep -q "^ii"; then
+        echo "  Deb:  $(dpkg -l cryptnox-cli | grep "^ii" | awk '{print $3}')"
     fi
 
-    log_success "Installed via pip"
-    log_info "Use: ~/.local/bin/cryptnox"
+    # Pip
+    if pip3 show cryptnox-cli &>/dev/null 2>&1; then
+        echo "  Pip:  $(pip3 show cryptnox-cli 2>/dev/null | grep "^Version:" | awk '{print $2}')"
+    fi
+
+    echo ""
+    echo "  Latest (PyPI): ${VERSION}"
 }
 
-# Setup card reader (blacklist kernel modules)
+# Status
+status() {
+    detect_os
+    echo ""
+    log_info "System Status"
+    echo ""
+
+    # pcscd
+    echo -n "  pcscd: "
+    if systemctl is-active pcscd &>/dev/null; then
+        echo -e "${GREEN}running${NC}"
+    else
+        echo -e "${RED}stopped${NC}"
+    fi
+
+    # Snap connections
+    if command -v snap &>/dev/null && snap list cryptnox &>/dev/null 2>&1; then
+        echo ""
+        echo "  Snap interfaces:"
+        snap connections cryptnox 2>/dev/null | grep -E "raw-usb|hardware" | sed 's/^/    /'
+    fi
+
+    show_version
+}
+
+# Setup card reader
 setup_reader() {
-    check_sudo
     log_info "Setting up card reader..."
 
     cat << 'EOF' | sudo tee /etc/modprobe.d/blacklist-nfc.conf > /dev/null
@@ -288,243 +347,35 @@ blacklist pn533_usb
 EOF
 
     log_success "NFC modules blacklisted"
-    log_warn "Reboot required for changes to take effect"
+    log_warn "Reboot required"
 }
 
-# Check installed version
-check_version() {
-    log_info "Checking installed versions..."
-    echo ""
-
-    # Check snap
-    if command -v snap &>/dev/null && snap list cryptnox &>/dev/null 2>&1; then
-        echo -e "Snap:    $(snap list cryptnox 2>/dev/null | tail -1 | awk '{print $2}')"
-    fi
-
-    # Check deb
-    if dpkg -l cryptnox-cli 2>/dev/null | grep -q "^ii"; then
-        echo -e "Deb:     $(dpkg -l cryptnox-cli | grep "^ii" | awk '{print $3}')"
-    fi
-
-    # Check rpm
-    if rpm -q cryptnox-cli &>/dev/null 2>&1; then
-        echo -e "RPM:     $(rpm -q --qf '%{VERSION}' cryptnox-cli)"
-    fi
-
-    # Check pip
-    if pip3 show cryptnox-cli &>/dev/null 2>&1; then
-        echo -e "Pip:     $(pip3 show cryptnox-cli 2>/dev/null | grep "^Version:" | awk '{print $2}')"
-    fi
-
-    # Check PyPI latest
-    LATEST=$(get_latest_version)
-    echo ""
-    echo -e "Latest (PyPI): ${LATEST:-unknown}"
-}
-
-# Uninstall cryptnox
-uninstall() {
-    log_info "Uninstalling cryptnox..."
-
-    local found=false
-
-    # Remove snap
-    if command -v snap &>/dev/null && snap list cryptnox &>/dev/null 2>&1; then
-        log_info "Removing snap package..."
-        sudo snap remove cryptnox
-        found=true
-    fi
-
-    # Remove deb
-    if dpkg -l cryptnox-cli 2>/dev/null | grep -q "^ii"; then
-        log_info "Removing deb package..."
-        sudo apt-get remove -y cryptnox-cli
-        sudo apt-get autoremove -y
-        found=true
-    fi
-
-    # Remove rpm
-    if rpm -q cryptnox-cli &>/dev/null 2>&1; then
-        log_info "Removing rpm package..."
-        if command -v dnf &>/dev/null; then
-            sudo dnf remove -y cryptnox-cli
-        else
-            sudo yum remove -y cryptnox-cli
-        fi
-        found=true
-    fi
-
-    # Remove pip
-    if pip3 show cryptnox-cli &>/dev/null 2>&1; then
-        log_info "Removing pip package..."
-        pip3 uninstall -y cryptnox-cli
-        found=true
-    fi
-
-    if [ "$found" = true ]; then
-        log_success "Uninstall complete"
-    else
-        log_warn "cryptnox not found"
-    fi
-}
-
-# Update cryptnox
-update() {
-    detect_os
-    log_info "Updating cryptnox..."
-
-    # Update snap
-    if command -v snap &>/dev/null && snap list cryptnox &>/dev/null 2>&1; then
-        log_info "Updating snap..."
-        sudo snap refresh cryptnox
-        log_success "Snap updated"
-        return
-    fi
-
-    # Update deb - reinstall
-    if dpkg -l cryptnox-cli 2>/dev/null | grep -q "^ii"; then
-        log_info "Updating deb package..."
-        install_deb
-        return
-    fi
-
-    # Update rpm - reinstall
-    if rpm -q cryptnox-cli &>/dev/null 2>&1; then
-        log_info "Updating rpm package..."
-        install_rpm
-        return
-    fi
-
-    # Update pip
-    if pip3 show cryptnox-cli &>/dev/null 2>&1; then
-        log_info "Updating pip package..."
-        pip3 install --user --upgrade cryptnox-cli
-        log_success "Pip package updated"
-        return
-    fi
-
-    log_warn "cryptnox not installed. Installing now..."
-    auto_install
-}
-
-# Status check
-status() {
-    detect_os
-    echo ""
-    log_info "System Status"
-    echo ""
-
-    # Show architecture
-    ARCH=$(detect_arch)
-    echo "Architecture:  $ARCH"
-
-    # Check pcscd service
-    echo -n "pcscd service: "
-    if systemctl is-active pcscd &>/dev/null; then
-        echo -e "${GREEN}running${NC}"
-    else
-        echo -e "${RED}stopped${NC}"
-    fi
-
-    # Check card readers
-    echo -n "Card readers:  "
-    if command -v pcsc_scan &>/dev/null; then
-        READERS=$(timeout 2 pcsc_scan -r 2>/dev/null | grep -c "Reader" || echo "0")
-        echo "${READERS} detected"
-    elif command -v cryptnox.pcsc-scan &>/dev/null; then
-        READERS=$(timeout 2 cryptnox.pcsc-scan -r 2>/dev/null | grep -c "Reader" || echo "0")
-        echo "${READERS} detected"
-    else
-        echo "pcsc_scan not available"
-    fi
-
-    # Check snap connections
-    if command -v snap &>/dev/null && snap list cryptnox &>/dev/null 2>&1; then
-        echo ""
-        log_info "Snap Connections:"
-        snap connections cryptnox 2>/dev/null | grep -E "raw-usb|hardware-observe" || echo "  (none)"
-    fi
-
-    echo ""
-    check_version
-}
-
-# Auto-detect best installation method
-auto_install() {
-    detect_os
-
-    echo ""
-    log_info "Selecting best installation method..."
-
-    # Priority: Snap > Deb > RPM/pip > pip
-    case $OS in
-        ubuntu|debian|linuxmint|pop|elementary|zorin)
-            if [ "$HAS_SNAP" = true ]; then
-                install_snap
-            else
-                install_deb
-            fi
-            ;;
-        fedora|rhel|centos|rocky|alma)
-            if [ "$HAS_SNAP" = true ]; then
-                install_snap
-            else
-                install_rpm
-            fi
-            ;;
-        arch|manjaro|endeavouros)
-            if [ "$HAS_SNAP" = true ]; then
-                install_snap
-            else
-                install_pip
-            fi
-            ;;
-        opensuse*)
-            if [ "$HAS_SNAP" = true ]; then
-                install_snap
-            else
-                install_pip
-            fi
-            ;;
-        *)
-            log_warn "Unknown distribution: $OS"
-            log_info "Trying pip installation..."
-            install_pip
-            ;;
-    esac
-}
-
-# Show usage
+# Usage
 usage() {
     cat << EOF
-Cryptnox CLI Universal Installer
+Cryptnox CLI Installer v${VERSION}
 
-Usage: $0 [COMMAND] [OPTIONS]
+Usage: $0 [COMMAND]
 
-Commands:
-    (none)      Auto-detect and install
-    --snap      Install via Snap
-    --deb       Install via Deb package
-    --rpm       Install via RPM/pip
-    --pip       Install via pip
+Installation methods:
+    --native        Install via pip + apt dependencies (RECOMMENDED)
+    --snap          Install via Snap Store
+    --deb           Install via Debian package (experimental)
 
-    --update    Update to latest version
-    --uninstall Remove cryptnox
-    --version   Show installed versions
-    --status    Show system status
+Management:
+    --update        Update to latest version
+    --uninstall     Remove cryptnox
+    --version       Show installed versions
+    --status        Show system status
+    --setup         Setup card reader (blacklist NFC modules)
 
-    --setup     Setup card reader (blacklist NFC modules)
-    --help      Show this help
-
-Environment variables:
-    CRYPTNOX_VERSION    Version to install (default: latest)
+    --help          Show this help
 
 Examples:
-    $0                  # Auto-detect and install
-    $0 --snap           # Install via Snap
-    $0 --update         # Update to latest
-    $0 --uninstall      # Remove cryptnox
-    $0 --status         # Check system status
+    $0              # Auto-detect (defaults to native)
+    $0 --native     # pip install with apt dependencies
+    $0 --snap       # Install from Snap Store
+    $0 --update     # Update existing installation
 
 EOF
 }
@@ -538,29 +389,17 @@ main() {
     echo ""
 
     case "${1:-}" in
+        --native|--pip)
+            detect_os
+            install_native
+            ;;
         --snap)
             detect_os
             install_snap
-            echo ""
-            log_success "Installation complete!"
             ;;
         --deb)
             detect_os
             install_deb
-            echo ""
-            log_success "Installation complete!"
-            ;;
-        --rpm)
-            detect_os
-            install_rpm
-            echo ""
-            log_success "Installation complete!"
-            ;;
-        --pip)
-            detect_os
-            install_pip
-            echo ""
-            log_success "Installation complete!"
             ;;
         --update)
             update
@@ -569,7 +408,7 @@ main() {
             uninstall
             ;;
         --version|--check)
-            check_version
+            show_version
             ;;
         --status)
             status
@@ -582,9 +421,12 @@ main() {
             exit 0
             ;;
         "")
-            auto_install
+            # Default: native installation
+            detect_os
+            log_info "Using native installation (pip + apt)"
+            log_info "Use --snap for Snap or --deb for Debian package"
             echo ""
-            log_success "Installation complete!"
+            install_native
             ;;
         *)
             log_error "Unknown option: $1"
@@ -593,6 +435,8 @@ main() {
             ;;
     esac
 
+    echo ""
+    log_success "Done!"
     echo ""
 }
 

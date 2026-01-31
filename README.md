@@ -49,21 +49,23 @@ chmod +x install.sh
 
 ## Installation Options
 
-### Auto-detect (Recommended)
+### Native (Recommended)
 
 ```bash
-./install.sh
+./install.sh --native
 ```
 
-The installer automatically detects your distribution and uses the best method.
+Installs system dependencies via apt/dnf + cryptnox-cli via pip. This is the most reliable method.
 
-### Force Specific Method
+### Other Methods
 
 ```bash
+./install.sh --native  # pip + apt dependencies (RECOMMENDED)
 ./install.sh --snap    # Install via Snap Store
-./install.sh --deb     # Install via Debian package
-./install.sh --pip     # Install via pip
+./install.sh --deb     # Install via Debian package (experimental)
 ```
+
+**Note:** The `--deb` option may have Python dependency issues. Use `--native` for best compatibility.
 
 ---
 
