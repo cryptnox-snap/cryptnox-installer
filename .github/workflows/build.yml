@@ -36,6 +36,15 @@ jobs:
           chmod +x scripts/build-deb.sh
           ./scripts/build-deb.sh ${{ steps.version.outputs.VERSION }}
 
+      - name: Rename package with OS version
+        run: |
+          cd dist
+          for deb in *.deb; do
+            newname="${deb%.deb}_${{ matrix.os }}.deb"
+            mv "$deb" "$newname"
+          done
+          ls -la
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
