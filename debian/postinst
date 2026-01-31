@@ -4,26 +4,21 @@ set -e
 
 case "$1" in
     configure)
-        # Install Python dependencies not available in Debian repos
+        # Install Python dependencies from PyPI (not all available in Debian repos)
         echo "Installing Python dependencies..."
-        pip3 install --break-system-packages --quiet \
-            lazy_import \
-            tabulate \
-            bip-utils \
-            ecdsa \
-            bleak \
-            aiohttp \
-            requests \
-            2>/dev/null || \
-        pip3 install --quiet \
-            lazy_import \
-            tabulate \
-            bip-utils \
-            ecdsa \
-            bleak \
-            aiohttp \
-            requests \
-            2>/dev/null || true
+
+        # All dependencies from cryptnox-cli pyproject.toml
+        DEPS="cryptnox-sdk-py>=1.0.2 lazy-import tabulate argparse appdirs base58 boto3 ecdsa colander pytz requests stdiomask web3"
+
+        # Try with --break-system-packages first (Python 3.11+), fallback to without
+        if pip3 install --break-system-packages --quiet $DEPS 2>/dev/null; then
+            echo "Dependencies installed successfully"
+        elif pip3 install --quiet $DEPS 2>/dev/null; then
+            echo "Dependencies installed successfully"
+        else
+            echo "Warning: Some dependencies may not have installed correctly"
+            echo "Try running: pip3 install cryptnox-cli"
+        fi
 
         # Ensure pcscd is running
         if command -v systemctl &>/dev/null; then
