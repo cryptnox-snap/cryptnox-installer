@@ -77,6 +77,7 @@ if [ "${SKIP_DEPS}" != "true" ]; then
     echo "Installing build dependencies..."
     sudo apt-get update
     sudo apt-get install -y \
+        build-essential \
         debhelper \
         dh-python \
         python3-all \
